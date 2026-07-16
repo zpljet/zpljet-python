@@ -4,7 +4,7 @@ Official Python SDK for the [ZPLJet](https://zpljet.com) API — fast ZPL → PD
 
 [![PyPI version](https://img.shields.io/pypi/v/zpljet.svg)](https://pypi.org/project/zpljet/)
 [![CI](https://github.com/zpljet/zpljet-python/actions/workflows/ci.yml/badge.svg)](https://github.com/zpljet/zpljet-python/actions/workflows/ci.yml)
-[![license](https://img.shields.io/pypi/l/zpljet.svg)](./LICENSE)
+[![license](https://img.shields.io/pypi/l/zpljet.svg)](https://github.com/zpljet/zpljet-python/blob/main/LICENSE)
 
 - **Zero dependencies** — a single small client on top of the stdlib
 - **Fully typed** (`py.typed`) — parameters, results, and every API error code
@@ -14,9 +14,12 @@ Official Python SDK for the [ZPLJet](https://zpljet.com) API — fast ZPL → PD
 
 ## Installation
 
+Choose one:
+
 ```sh
 pip install zpljet
-# or: uv add zpljet / poetry add zpljet
+uv add zpljet
+poetry add zpljet
 ```
 
 ## Quickstart
@@ -33,7 +36,6 @@ zpljet = ZplJet(api_key=os.environ["ZPLJET_API_KEY"])
 
 label = zpljet.convert(zpl="^XA^FO50,50^A0N,50,50^FDHello^FS^XZ")
 
-# label.data is the raw PDF bytes — nothing is stored server-side.
 Path("label.pdf").write_bytes(label.data)
 ```
 
@@ -88,11 +90,9 @@ zpljet = AsyncZplJet(api_key=os.environ["ZPLJET_API_KEY"])
 label = await zpljet.convert(zpl="^XA^FO50,50^A0N,50,50^FDHello^FS^XZ")
 ```
 
-(The API is a single short-lived POST, so calls are offloaded to a thread
-instead of pulling in an async HTTP dependency — the event loop is never
-blocked. Retry waits happen on that worker thread, so bound your concurrency
-with a semaphore for large batches, as in
-[`examples/05_async_batch.py`](./examples/05_async_batch.py).)
+The async client runs the dependency-free transport in a worker thread. Bound
+large batches with a semaphore; see
+[`examples/05_async_batch.py`](https://github.com/zpljet/zpljet-python/blob/main/examples/05_async_batch.py).
 
 ### Error handling
 
@@ -116,11 +116,11 @@ except BadRequestError as err:
 except QuotaExceededError as err:
     print(f"Quota used up ({err.used}/{err.quota}), resets {err.resets_at}")
 except RateLimitError as err:
-    print(f"Rate limited — retry after {err.retry_after}s")  # already auto-retried
+    print(f"Rate limited — retry after {err.retry_after}s")
 except ConversionFailedError as err:
     print(f"Engine rejected the ZPL (conversion {err.conversion_id})")
 except APIConnectionError as err:
-    print(f"Network problem: {err}")  # already auto-retried
+    print(f"Network problem: {err}")
 ```
 
 | Exception | Status | `error.code` | Extra fields |
@@ -143,13 +143,9 @@ All of these extend `ZplJetError`, and every HTTP error carries `status`,
 
 ### Retries
 
-Rate limits (429), transient server errors (5xx), timeouts, and network
-failures are retried automatically — up to 2 times by default, with
-exponential backoff, honoring the server's `Retry-After`. A 503
-`service_unavailable` means the render engine is temporarily unavailable; the
-request was not charged against quota. A 502
-`conversion_failed` is **not** retried: it means the engine rejected the ZPL
-itself, so a retry would fail identically.
+Rate limits, transient 5xx responses, timeouts, and network failures retry up
+to twice by default. Retries use exponential backoff and honor `Retry-After`.
+`conversion_failed` is never retried.
 
 ```python
 # Client-wide
@@ -184,14 +180,12 @@ zpljet = ZplJet(
 )
 ```
 
-The default transport is stdlib `urllib` — zero dependencies, but a fresh
-connection per request. For sustained high throughput, inject a pooling
-`Transport` built on your HTTP stack of choice (any callable
-`(url, body, headers, timeout) -> TransportResponse` works).
+The default transport uses stdlib `urllib`. For connection pooling, inject any
+callable matching `(url, body, headers, timeout) -> TransportResponse`.
 
 ## Examples
 
-Runnable scripts live in [`examples/`](./examples):
+Runnable scripts live in [`examples/`](https://github.com/zpljet/zpljet-python/tree/main/examples):
 
 ```sh
 ZPLJET_API_KEY=zpl_… python examples/01_convert_to_pdf.py
@@ -203,14 +197,13 @@ ZPLJET_API_KEY=zpl_… python examples/01_convert_to_pdf.py
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-ruff check .          # lint
-mypy                  # strict type check
-pytest                # unit tests (no network)
+ruff check .
+mypy
+pytest
 
-# End-to-end tests against the live API (uses your quota):
 ZPLJET_API_KEY=zpl_… pytest tests/test_e2e.py
 ```
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](https://github.com/zpljet/zpljet-python/blob/main/LICENSE)

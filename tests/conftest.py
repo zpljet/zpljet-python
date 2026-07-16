@@ -1,4 +1,4 @@
-"""Shared test helpers — a scriptable fake transport, no network involved."""
+"""Shared test helpers."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ ZPL = "^XA^FO50,50^A0N,50,50^FDHello^FS^XZ"
 
 
 class FakeTransport:
-    """Serves the given results in order (repeating the last one). Exception
-    instances are raised instead of returned (transport failures)."""
+    """Serve scripted responses or exceptions in order."""
 
     def __init__(self, *results: TransportResponse | Exception) -> None:
         self._results = list(results)
@@ -33,7 +32,7 @@ class FakeTransport:
 def error_response(
     status: int, code: str, message: str = "message", **context: object
 ) -> TransportResponse:
-    """A structured API error response, exactly as the server builds them."""
+    """Build an API error response."""
     payload = {
         "error": {
             "code": code,
@@ -50,7 +49,7 @@ def error_response(
 
 
 def pdf_response(conversion_id: str = "conv_123", body: bytes = b"%PDF-fake") -> TransportResponse:
-    """A successful ``output="data"`` response carrying PDF bytes."""
+    """Build a PDF response."""
     return TransportResponse(
         status=200,
         headers={"Content-Type": "application/pdf", "X-Conversion-Id": conversion_id},
@@ -59,7 +58,7 @@ def pdf_response(conversion_id: str = "conv_123", body: bytes = b"%PDF-fake") ->
 
 
 def hosted_response(**overrides: object) -> TransportResponse:
-    """A successful ``output="url"`` JSON response."""
+    """Build a hosted-label response."""
     payload: dict[str, object] = {
         "id": "conv_456",
         "url": "https://files.example/conv_456.pdf",

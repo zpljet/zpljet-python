@@ -1,12 +1,4 @@
-"""End-to-end tests against a real ZPLJet API.
-
-Skipped unless ZPLJET_API_KEY is set — they consume real quota::
-
-    ZPLJET_API_KEY=zpl_… pytest tests/test_e2e.py
-
-Point them at a local/staging stack with ZPLJET_BASE_URL (e.g.
-http://localhost:3000).
-"""
+"""Live API tests gated by ZPLJET_API_KEY."""
 
 from __future__ import annotations
 
@@ -24,7 +16,7 @@ from zpljet import (
 )
 
 API_KEY = os.environ.get("ZPLJET_API_KEY")
-BASE_URL = os.environ.get("ZPLJET_BASE_URL")  # optional — defaults to production
+BASE_URL = os.environ.get("ZPLJET_BASE_URL")
 
 ZPL = "^XA^FO50,50^A0N,50,50^FDZPLJet e2e^FS^XZ"
 
@@ -33,7 +25,7 @@ pytestmark = pytest.mark.skipif(not API_KEY, reason="ZPLJET_API_KEY not set")
 
 def make_client() -> ZplJet:
     assert API_KEY is not None
-    return ZplJet(API_KEY, **({"base_url": BASE_URL} if BASE_URL else {}))  # type: ignore[arg-type]
+    return ZplJet(API_KEY, base_url=BASE_URL) if BASE_URL else ZplJet(API_KEY)
 
 
 def test_converts_zpl_to_pdf() -> None:
@@ -58,9 +50,10 @@ def test_rejects_invalid_zpl() -> None:
 
 
 def test_rejects_bad_api_key() -> None:
-    impostor = ZplJet(
-        "zpl_definitely_not_a_real_key",
-        **({"base_url": BASE_URL} if BASE_URL else {}),  # type: ignore[arg-type]
+    impostor = (
+        ZplJet("zpl_definitely_not_a_real_key", base_url=BASE_URL)
+        if BASE_URL
+        else ZplJet("zpl_definitely_not_a_real_key")
     )
     with pytest.raises(AuthenticationError):
         impostor.convert(zpl=ZPL)
@@ -70,7 +63,6 @@ def test_hosts_file_or_cleanly_refuses_on_free_plan() -> None:
     try:
         hosted = make_client().convert(zpl=ZPL, output="url")
     except PermissionDeniedError:
-        # Free-plan keys can't host — the typed refusal is the correct behavior.
         return
     assert hosted.url.startswith(("http://", "https://"))
     assert hosted.pages >= 1
@@ -80,6 +72,6 @@ def test_hosts_file_or_cleanly_refuses_on_free_plan() -> None:
 
 async def test_async_client_converts_to_pdf() -> None:
     assert API_KEY is not None
-    client = AsyncZplJet(API_KEY, **({"base_url": BASE_URL} if BASE_URL else {}))  # type: ignore[arg-type]
+    client = AsyncZplJet(API_KEY, base_url=BASE_URL) if BASE_URL else AsyncZplJet(API_KEY)
     label = await client.convert(zpl=ZPL)
     assert label.data[:4] == b"%PDF"

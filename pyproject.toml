@@ -14,7 +14,7 @@ requires-python = ">=3.9"
 dependencies = []
 keywords = ["zpl", "zebra", "pdf", "png", "label", "shipping-label", "barcode", "printing", "zpljet"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",

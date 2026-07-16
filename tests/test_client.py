@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+from typing import Any
 
 import pytest
 from conftest import ZPL, FakeTransport, error_response, hosted_response, pdf_response
@@ -24,14 +26,13 @@ from zpljet import (
 )
 
 
-def make_client(transport: FakeTransport, **kwargs: object) -> ZplJet:
+def make_client(transport: FakeTransport, **kwargs: Any) -> ZplJet:
     options = {"max_retries": 0, **kwargs}
-    return ZplJet("zpl_test", transport=transport, **options)  # type: ignore[arg-type]
+    return ZplJet("zpl_test", transport=transport, **options)
 
 
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Stub out retry sleeps; returns the list of requested delays."""
     recorded: list[float] = []
     monkeypatch.setattr(zpljet._client, "_sleep", recorded.append)
     return recorded
@@ -51,9 +52,15 @@ class TestConstructor:
     def test_validates_max_retries_and_caps_large_values(self) -> None:
         with pytest.raises(ValueError, match="max_retries"):
             ZplJet("zpl_test", max_retries=-1)
+        invalid: Any = 1.5
         with pytest.raises(ValueError, match="max_retries"):
-            AsyncZplJet("zpl_test", max_retries=1.5)  # type: ignore[arg-type]
+            AsyncZplJet("zpl_test", max_retries=invalid)
         assert ZplJet("zpl_test", max_retries=99).max_retries == 10
+
+    @pytest.mark.parametrize("timeout", [0, -1, math.inf, math.nan, True])
+    def test_rejects_invalid_timeouts(self, timeout: Any) -> None:
+        with pytest.raises(ValueError, match="timeout"):
+            ZplJet("zpl_test", timeout=timeout)
 
     def test_strips_trailing_slashes_from_base_url(self) -> None:
         client = ZplJet("zpl_test", base_url="http://localhost:3000//")
@@ -92,6 +99,10 @@ class TestRequestShape:
         transport = FakeTransport(pdf_response())
         make_client(transport).convert(zpl=ZPL, timeout=5.0)
         assert transport.calls[0][3] == 5.0
+
+    def test_rejects_invalid_request_timeout(self) -> None:
+        with pytest.raises(ValueError, match="timeout"):
+            make_client(FakeTransport(pdf_response())).convert(zpl=ZPL, timeout=0)
 
 
 class TestDataMode:
@@ -243,7 +254,7 @@ class TestRetries:
 
         assert info.value.retry_after == 0
         assert info.value.retry_at == "2026-07-07T00:00:01.000Z"
-        assert len(transport.calls) == 3  # 1 attempt + 2 retries
+        assert len(transport.calls) == 3
 
     def test_retries_connection_errors_with_backoff(self, sleeps: list[float]) -> None:
         transport = FakeTransport(APIConnectionError("boom"), pdf_response())
@@ -304,6 +315,14 @@ class TestRetries:
         )
         make_client(transport, max_retries=1).convert(zpl=ZPL)
         assert sleeps == [30.0]
+
+    def test_negative_retry_after_is_clamped(self, sleeps: list[float]) -> None:
+        transport = FakeTransport(
+            error_response(429, "rate_limit_exceeded", "slow down", retryAfter=-1),
+            pdf_response(),
+        )
+        make_client(transport, max_retries=1).convert(zpl=ZPL)
+        assert sleeps == [0.0]
 
 
 class TestAsyncClient:

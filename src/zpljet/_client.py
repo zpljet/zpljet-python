@@ -6,6 +6,7 @@ import asyncio
 import email.utils
 import http.client
 import json
+import math
 import random
 import socket
 import time
@@ -14,7 +15,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, overload
+from typing import Any, Callable, Literal, cast, overload
 
 from ._errors import APIConnectionError, APIError, APITimeoutError, ZplJetError
 from ._types import HostedLabel, LabelData
@@ -27,12 +28,8 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_RETRIES = 2
 MAX_RETRIES_CAP = 10
 
-#: Never sleep longer than this between retries, whatever the server asks.
 _MAX_RETRY_DELAY = 30.0
-#: Base delay for exponential backoff when the server gives no Retry-After.
 _BASE_RETRY_DELAY = 0.5
-
-#: Hosts allowed to use plaintext http without opting in.
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 
 
@@ -40,6 +37,15 @@ def _normalize_max_retries(value: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError("max_retries must be a finite integer >= 0")
     return min(value, MAX_RETRIES_CAP)
+
+
+def _normalize_timeout(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("timeout must be a finite number > 0")
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout must be a finite number > 0")
+    return timeout
 
 
 def _assert_secure_base_url(base_url: str, allow_insecure_http: bool) -> None:
@@ -82,15 +88,15 @@ Transport = Callable[[str, bytes, Mapping[str, str], float], TransportResponse]
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(  # type: ignore[override]
+    def redirect_request(
         self,
         req: urllib.request.Request,
-        fp: object,
+        fp: Any,
         code: int,
         msg: str,
-        headers: Mapping[str, str],
+        headers: Any,
         newurl: str,
-    ) -> None:
+    ) -> urllib.request.Request | None:
         return None
 
 
@@ -100,12 +106,7 @@ _NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
 def _urllib_transport(
     url: str, body: bytes, headers: Mapping[str, str], timeout: float
 ) -> TransportResponse:
-    """Default transport — stdlib only, no dependencies.
-
-    Note: ``urllib`` opens a fresh connection per request (no keep-alive).
-    That is fine for typical label volumes; for sustained high throughput,
-    inject a pooling :data:`Transport` built on your HTTP stack of choice.
-    """
+    """Send one request with the standard library."""
     request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
     try:
         with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
@@ -115,9 +116,6 @@ def _urllib_transport(
                 body=response.read(),
             )
     except urllib.error.HTTPError as exc:
-        # Non-2xx responses arrive here — they are responses, not failures.
-        # Reading the body can still fail mid-stream, though, and exceptions
-        # raised inside this handler skip the sibling clauses below.
         with exc:
             try:
                 error_body = exc.read()
@@ -137,29 +135,13 @@ def _urllib_transport(
             raise APITimeoutError(f"Request to {url} timed out after {timeout}s") from exc
         raise APIConnectionError(f"Request to {url} failed: {exc.reason}") from exc
     except http.client.HTTPException as exc:
-        # e.g. IncompleteRead when the connection drops mid-body — an
-        # HTTPException, NOT an OSError, so it needs its own clause to keep
-        # the "raises APIConnectionError" contract (and stay retryable).
         raise APIConnectionError(f"Request to {url} failed: {exc!r}") from exc
     except OSError as exc:
         raise APIConnectionError(f"Request to {url} failed: {exc}") from exc
 
 
 class ZplJet:
-    """ZPLJet API client.
-
-    ::
-
-        from zpljet import ZplJet
-
-        zpljet = ZplJet(api_key=os.environ["ZPLJET_API_KEY"])
-        label = zpljet.convert(zpl="^XA^FO50,50^A0N,50,50^FDHello^FS^XZ")
-        Path("label.pdf").write_bytes(label.data)
-
-    Requests that fail with a rate limit (429), a transient server error, or
-    a network error are retried automatically with exponential backoff
-    (honoring ``Retry-After``). Configure via ``max_retries`` and
-    ``timeout``, or per call.
+    """Synchronous ZPLJet API client with automatic retries.
 
     :param api_key: Your ZPLJet API key (``zpl_…``), created in the dashboard
         at https://zpljet.com/dashboard. Keep it server-side.
@@ -189,7 +171,7 @@ class ZplJet:
         self.api_key = api_key.strip()
         self.base_url = base_url.rstrip("/")
         _assert_secure_base_url(self.base_url, allow_insecure_http)
-        self.timeout = timeout
+        self.timeout = _normalize_timeout(timeout)
         self.max_retries = _normalize_max_retries(max_retries)
         self._transport: Transport = transport or _urllib_transport
 
@@ -257,6 +239,29 @@ class ZplJet:
         :raises ConversionFailedError: the engine could not render the ZPL (502)
         :raises APIConnectionError: network failure or timeout, after retries
         """
+        return self._convert(
+            zpl,
+            dpmm=dpmm,
+            width_mm=width_mm,
+            height_mm=height_mm,
+            format=format,
+            output=output,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+
+    def _convert(
+        self,
+        zpl: str,
+        *,
+        dpmm: int | None,
+        width_mm: float | None,
+        height_mm: float | None,
+        format: Literal["pdf", "png"] | None,
+        output: Literal["data", "url"] | None,
+        timeout: float | None,
+        max_retries: int | None,
+    ) -> LabelData | HostedLabel:
         body: dict[str, Any] = {"zpl": zpl}
         if dpmm is not None:
             body["dpmm"] = dpmm
@@ -299,7 +304,7 @@ class ZplJet:
             if max_retries is None
             else _normalize_max_retries(max_retries)
         )
-        attempt_timeout = self.timeout if timeout is None else timeout
+        attempt_timeout = self.timeout if timeout is None else _normalize_timeout(timeout)
 
         attempt = 0
         while True:
@@ -321,24 +326,7 @@ class ZplJet:
 
 
 class AsyncZplJet:
-    """Async variant of :class:`ZplJet` with the same interface.
-
-    The API is a single short-lived POST, so this wraps the (dependency-free)
-    sync client in :func:`asyncio.to_thread` rather than pulling in an async
-    HTTP library — same reliability behavior, zero dependencies. Each call
-    runs on the default executor and never blocks the event loop.
-
-    One consequence: retry backoff waits happen on that executor thread, so a
-    rate-limit storm can park several worker threads at once. If your app
-    shares the default executor with other heavy ``to_thread`` work, cap
-    concurrency with a semaphore (see ``examples/05_async_batch.py``) or set
-    ``max_retries=0`` and retry at the call site.
-
-    ::
-
-        zpljet = AsyncZplJet(api_key=os.environ["ZPLJET_API_KEY"])
-        label = await zpljet.convert(zpl="^XA…^XZ")
-    """
+    """Async ZPLJet client backed by :func:`asyncio.to_thread`."""
 
     def __init__(
         self,
@@ -405,7 +393,7 @@ class AsyncZplJet:
     ) -> LabelData | HostedLabel:
         """Async :meth:`ZplJet.convert` — same parameters and errors."""
         return await asyncio.to_thread(
-            self._client.convert,  # type: ignore[arg-type]
+            self._client._convert,
             zpl,
             dpmm=dpmm,
             width_mm=width_mm,
@@ -424,7 +412,7 @@ def _parse_error_body(body: bytes) -> dict[str, Any]:
     except (ValueError, UnicodeDecodeError):
         return {}
     if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
-        return parsed["error"]  # type: ignore[no-any-return]
+        return cast(dict[str, Any], parsed["error"])
     return {}
 
 
@@ -467,10 +455,7 @@ def _parse_hosted_label(body: bytes) -> HostedLabel:
 
 
 def _is_retryable(error: APIError | APIConnectionError) -> bool:
-    """Whether an error is worth retrying: network failures, timeouts, rate
-    limits, and transient 5xx. ``conversion_failed`` (502) is excluded — it
-    means the engine rejected the ZPL itself, so a retry would fail
-    identically."""
+    """Return whether a failure is transient."""
     if isinstance(error, APIConnectionError):
         return True
     if error.status == 429:
@@ -479,9 +464,7 @@ def _is_retryable(error: APIError | APIConnectionError) -> bool:
 
 
 def _parse_retry_after_header(value: str | None) -> float | None:
-    """The ``Retry-After`` response header in seconds — delta-seconds or an
-    HTTP-date. Used when the body carries no ``retryAfter`` field (e.g. a
-    gateway 429/503 with an HTML body)."""
+    """Parse delta-seconds or an HTTP date."""
     if not value:
         return None
     try:
@@ -500,12 +483,11 @@ def _retry_delay(
     attempt: int,
     header_retry_after: float | None = None,
 ) -> float:
-    """Delay before the next retry — the body's ``retryAfter``, else the
-    ``Retry-After`` header, else exponential backoff with jitter."""
+    """Calculate the next retry delay."""
     if isinstance(error, APIError):
         retry_after = error.raw.get("retryAfter")
         if isinstance(retry_after, (int, float)) and not isinstance(retry_after, bool):
-            return min(float(retry_after), _MAX_RETRY_DELAY)
+            return min(max(float(retry_after), 0.0), _MAX_RETRY_DELAY)
     if header_retry_after is not None:
         return min(header_retry_after, _MAX_RETRY_DELAY)
     backoff = _BASE_RETRY_DELAY * (2.0**attempt)
@@ -513,6 +495,5 @@ def _retry_delay(
 
 
 def _sleep(seconds: float) -> None:
-    """Module-level indirection so tests can stub the wait out."""
     if seconds > 0:
         time.sleep(seconds)
