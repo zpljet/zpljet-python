@@ -1,0 +1,46 @@
+# Publishes to PyPI when a GitHub Release is published (tag like v0.1.0).
+#
+# Setup (one time) — uses PyPI "trusted publishing", no token needed:
+#   1. pypi.org -> your project (or "pending publisher" before the first
+#      release) -> Publishing -> add a GitHub publisher:
+#      owner: zpljet, repo: zpljet-python, workflow: release.yml,
+#      environment: pypi
+#   2. In this repo: Settings -> Environments -> create "pypi".
+#
+# Release flow:
+#   Bump version in pyproject.toml + src/zpljet/_version.py (test enforces match)
+#   Update CHANGELOG.md, commit, mirror to this repo
+#   Create a GitHub Release with tag v<version> -> this workflow publishes.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]" build
+      - run: ruff check .
+      - run: mypy
+      - run: pytest
+      - name: Check tag matches pyproject version
+        run: |
+          PKG_VERSION="v$(python -c "import re,pathlib;print(re.search(r'^version = \"(.+)\"$', pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")"
+          if [ "$PKG_VERSION" != "${{ github.event.release.tag_name }}" ]; then
+            echo "Tag ${{ github.event.release.tag_name }} != pyproject $PKG_VERSION"
+            exit 1
+          fi
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
