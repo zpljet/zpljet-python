@@ -1,8 +1,4 @@
-"""Result types for the ZPLJet API.
-
-These mirror the ``POST /v1/convert`` contract exactly — see
-https://zpljet.com/docs/api-reference for the canonical reference.
-"""
+"""Result types for the ZPLJet API."""
 
 from __future__ import annotations
 

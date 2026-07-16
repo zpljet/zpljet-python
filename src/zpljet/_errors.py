@@ -1,21 +1,4 @@
-"""Typed errors for the ZPLJet API.
-
-Every JSON error the API returns has a single structured shape::
-
-    {
-      "error": {
-        "code": "rate_limit_exceeded",
-        "message": "…",
-        "retryAfter": 1,
-        "docUrl": "https://zpljet.com/docs/errors#rate_limit_exceeded"
-      }
-    }
-
-The SDK maps each stable ``error.code`` to a dedicated subclass so you can
-branch with ``except``/``isinstance`` instead of string comparison. Every
-subclass also carries the raw ``code``, HTTP ``status``, and any
-code-specific context fields.
-"""
+"""Typed errors for the ZPLJet API."""
 
 from __future__ import annotations
 
@@ -42,9 +25,7 @@ class ZplJetError(Exception):
 
 
 class APIConnectionError(ZplJetError):
-    """The request never produced a usable API response — DNS failure,
-    connection reset, TLS error, etc. Automatically retried before being
-    raised."""
+    """A network failure prevented a usable response."""
 
     def __init__(self, message: str = "Connection error") -> None:
         super().__init__(message)
@@ -96,9 +77,7 @@ class APIError(ZplJetError):
 
 
 class BadRequestError(APIError):
-    """400 ``invalid_request`` — the request body failed validation. The
-    message is ``"<param>: <problem>"``; :attr:`param` names the offending
-    field."""
+    """400 ``invalid_request`` response."""
 
     def __init__(self, status: int, message: str, raw: dict[str, Any] | None = None) -> None:
         super().__init__(status, message, raw)
@@ -107,8 +86,7 @@ class BadRequestError(APIError):
 
 
 class AuthenticationError(APIError):
-    """401 ``missing_api_key`` / ``invalid_api_key`` — check the
-    ``X-API-Key`` value."""
+    """401 ``missing_api_key`` or ``invalid_api_key`` response."""
 
 
 class PayloadTooLargeError(APIError):
@@ -131,16 +109,11 @@ class QuotaExceededError(APIError):
 
 
 class PermissionDeniedError(APIError):
-    """403 ``hosting_not_allowed`` / ``no_retention_enforced`` — hosted URLs
-    are not permitted for this account. Use ``output="data"`` instead, or
-    change the plan/setting in the dashboard. Branch on :attr:`APIError.code`
-    to tell the two apart."""
+    """403 ``hosting_not_allowed`` or ``no_retention_enforced`` response."""
 
 
 class RateLimitError(APIError):
-    """429 ``rate_limit_exceeded`` — too many requests for this API key. The
-    SDK retries these automatically (honoring :attr:`retry_after`) before
-    raising."""
+    """429 ``rate_limit_exceeded`` response."""
 
     def __init__(self, status: int, message: str, raw: dict[str, Any] | None = None) -> None:
         super().__init__(status, message, raw)
@@ -151,9 +124,7 @@ class RateLimitError(APIError):
 
 
 class ConversionFailedError(APIError):
-    """502 ``conversion_failed`` — the rendering engine could not process the
-    ZPL. Usually malformed or unsupported commands; not retried
-    automatically."""
+    """502 ``conversion_failed`` response."""
 
     def __init__(self, status: int, message: str, raw: dict[str, Any] | None = None) -> None:
         super().__init__(status, message, raw)
@@ -162,9 +133,7 @@ class ConversionFailedError(APIError):
 
 
 class ServiceUnavailableError(APIError):
-    """503 ``service_unavailable`` — render engine temporarily unavailable;
-    the request was not charged against quota. Retry after the retry-after
-    interval."""
+    """503 ``service_unavailable`` response."""
 
     def __init__(self, status: int, message: str, raw: dict[str, Any] | None = None) -> None:
         super().__init__(status, message, raw)

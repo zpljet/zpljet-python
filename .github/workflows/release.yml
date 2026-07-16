@@ -1,16 +1,4 @@
-# Publishes to PyPI when a GitHub Release is published (tag like v0.1.0).
-#
-# Setup (one time) — uses PyPI "trusted publishing", no token needed:
-#   1. pypi.org -> your project (or "pending publisher" before the first
-#      release) -> Publishing -> add a GitHub publisher:
-#      owner: zpljet, repo: zpljet-python, workflow: release.yml,
-#      environment: pypi
-#   2. In this repo: Settings -> Environments -> create "pypi".
-#
-# Release flow:
-#   Bump version in pyproject.toml + src/zpljet/_version.py (test enforces match)
-#   Update CHANGELOG.md, commit, mirror to this repo
-#   Create a GitHub Release with tag v<version> -> this workflow publishes.
+# Publishes GitHub Releases to PyPI.
 name: Release
 
 on:
@@ -25,7 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write # PyPI trusted publishing (OIDC)
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0

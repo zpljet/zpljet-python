@@ -6,6 +6,7 @@ import http.client
 import io
 import urllib.error
 import urllib.request
+from email.message import Message
 from typing import IO, Any, ClassVar, cast
 
 import pytest
@@ -38,8 +39,6 @@ class _FakeResponse:
 def test_incomplete_read_on_success_body_wraps_as_connection_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A mid-body connection drop is an HTTPException, not an OSError — it
-    must still surface as APIConnectionError (and therefore be retryable)."""
     exc = http.client.IncompleteRead(b"partial", expected=100)
     monkeypatch.setattr(
         zpljet._client._NO_REDIRECT_OPENER,
@@ -53,15 +52,12 @@ def test_incomplete_read_on_success_body_wraps_as_connection_error(
 def test_incomplete_read_on_error_body_wraps_as_connection_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """exc.read() inside the HTTPError handler can fail too — sibling except
-    clauses no longer apply there, so it needs its own wrapping."""
-
     def raise_http_error(*args: Any, **kwargs: Any) -> None:
         raise urllib.error.HTTPError(
             "https://api.example/v1/convert",
             502,
             "Bad Gateway",
-            None,  # type: ignore[arg-type]
+            Message(),
             cast("IO[bytes]", _BrokenBody()),
         )
 
@@ -78,7 +74,7 @@ def test_default_transport_does_not_follow_redirects() -> None:
     handler = zpljet._client._NoRedirectHandler()
     request = urllib.request.Request("https://api.example/v1/convert")
 
-    redirected = cast("Any", handler).redirect_request(
+    redirected = handler.redirect_request(
         request,
         object(),
         302,
@@ -91,7 +87,6 @@ def test_default_transport_does_not_follow_redirects() -> None:
 
 
 def test_connection_errors_are_retried_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The wrapped transport failure flows through the client's retry loop."""
     recorded: list[float] = []
     monkeypatch.setattr(zpljet._client, "_sleep", recorded.append)
     transport = FakeTransport(APIConnectionError("mid-body drop"), pdf_response())
