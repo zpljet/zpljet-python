@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zpljet"
-version = "1.0.0"
+version = "2.0.0"
 description = "Official Python SDK for the ZPLJet API — fast ZPL to PDF/PNG conversion"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "ZPLJet", email = "support@zpljet.com" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = []
 keywords = ["zpl", "zebra", "pdf", "png", "label", "shipping-label", "barcode", "printing", "zpljet"]
 classifiers = [
@@ -18,11 +18,12 @@ classifiers = [
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 
@@ -45,12 +46,12 @@ asyncio_mode = "auto"
 
 [tool.mypy]
 strict = true
-python_version = "3.9"
+python_version = "3.10"
 files = ["src", "tests", "examples"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]

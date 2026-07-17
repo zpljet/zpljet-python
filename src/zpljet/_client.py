@@ -8,14 +8,13 @@ import http.client
 import json
 import math
 import random
-import socket
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, cast, overload
+from typing import Any, Literal, cast, overload
 
 from ._errors import APIConnectionError, APIError, APITimeoutError, ZplJetError
 from ._types import HostedLabel, LabelData
@@ -128,10 +127,10 @@ def _urllib_transport(
                 headers=dict(exc.headers.items()) if exc.headers else {},
                 body=error_body,
             )
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raise APITimeoutError(f"Request to {url} timed out after {timeout}s") from exc
     except urllib.error.URLError as exc:
-        if isinstance(exc.reason, socket.timeout):
+        if isinstance(exc.reason, TimeoutError):
             raise APITimeoutError(f"Request to {url} timed out after {timeout}s") from exc
         raise APIConnectionError(f"Request to {url} failed: {exc.reason}") from exc
     except http.client.HTTPException as exc:

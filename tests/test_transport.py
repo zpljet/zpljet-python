@@ -13,7 +13,7 @@ import pytest
 from conftest import ZPL, FakeTransport, error_response, pdf_response
 
 import zpljet._client
-from zpljet import APIConnectionError, ZplJet
+from zpljet import APIConnectionError, APITimeoutError, ZplJet
 from zpljet._client import _parse_retry_after_header, _urllib_transport
 
 
@@ -67,6 +67,22 @@ def test_incomplete_read_on_error_body_wraps_as_connection_error(
 
     monkeypatch.setattr(zpljet._client._NO_REDIRECT_OPENER, "open", raise_http_error)
     with pytest.raises(APIConnectionError):
+        _urllib_transport("https://api.example/v1/convert", b"{}", {}, 5.0)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [TimeoutError(), urllib.error.URLError(TimeoutError())],
+    ids=["direct", "url-error"],
+)
+def test_timeouts_map_to_api_timeout(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    def raise_timeout(*args: Any, **kwargs: Any) -> None:
+        raise exc
+
+    monkeypatch.setattr(zpljet._client._NO_REDIRECT_OPENER, "open", raise_timeout)
+    with pytest.raises(APITimeoutError):
         _urllib_transport("https://api.example/v1/convert", b"{}", {}, 5.0)
 
 

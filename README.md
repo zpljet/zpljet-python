@@ -10,7 +10,7 @@ Official Python SDK for the [ZPLJet](https://zpljet.com) API — fast ZPL → PD
 - **Fully typed** (`py.typed`) — parameters, results, and every API error code
 - **Reliable by default** — automatic retries with exponential backoff (honoring `Retry-After`), per-request timeouts, typed exceptions
 - **Sync and async** — `ZplJet` for scripts and servers, `AsyncZplJet` for asyncio code
-- Python ≥ 3.9
+- Python ≥ 3.10; tested through 3.14
 
 ## Installation
 
